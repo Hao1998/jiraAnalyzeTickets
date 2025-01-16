@@ -1,0 +1,22 @@
+{
+  "name": "lambda-jira-analyze-tickets",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "aws-lambda": "^1.0.7",
+    "esbuild": "^0.24.2",
+    "moment": "^2.30.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.147",
+    "@types/node": "^22.10.6",
+    "typescript": "^5.7.3"
+  }
+}
