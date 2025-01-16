@@ -23,12 +23,12 @@ const handler = async (event) => {
         //process analytics
         const metrics = await processTickets(request);
 
-        // Store in DynamoDB
-        await storeMetrics(metrics);
+        // Store in DynamoDB and get the result
+        const storedMetrics = await storeMetrics(metrics);
 
         return {
             statusCode: 200,
-            body: JSON.stringify(metrics)
+            body: JSON.stringify(storedMetrics)
         };
     } catch (error) {
         console.error('Error:', error);
@@ -114,12 +114,32 @@ async function storeMetrics(metrics) {
     const dynamoDB = new DynamoDB.DocumentClient();
     const params = {
         TableName: 'MetricsHistory',
-        Item: {
-            ...metrics,
-            ttl: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60) // 365 days TTL
-        }
+        Key: {
+            projectId: metrics.projectId,
+            timestamp: metrics.timestamp
+        },
+        UpdateExpression: `SET 
+                severityDistribution = :sd,
+                averageResolutionTimes = :art,
+                slaCompliance = :slac,
+                ttl = if_not_exists(ttl, :ttl)
+                `,
+        ExpressionAttributeValues: {
+            ':sd': metrics.severityDistribution,
+            ':art': metrics.averageResolutionTimes,
+            ':slac': metrics.slaCompliance,
+            ':ttl': Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60)
+        },
+        ReturnValues: 'ALL_NEW' // This will return the item after the update
     };
-    await dynamoDB.put(params).promise();
+
+    try {
+        const result = await dynamoDB.update(params).promise();
+        return result.Attributes; // Return the updated/created item
+    } catch (error) {
+        console.error('DynamoDB operation failed: ', error);
+        throw error;
+    }
 }
 
 
