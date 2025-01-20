@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "aws-lambda": "^1.0.7",
+    "aws-sdk": "^2.1692.0",
     "esbuild": "^0.24.2",
     "moment": "^2.30.1"
   },

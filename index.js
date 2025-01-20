@@ -1,19 +1,12 @@
-import {APIGatewayProxyEvent, APIGatewayProxyResult} from 'aws-lambda';
-import {DynamoDB} from 'aws-sdk';
+const {DynamoDB} = require('aws-sdk');
 
 
 const handler = async (event) => {
+    console.log('Event received:', JSON.stringify(event, null, 2));
     try {
-        if (!event.body) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({message: 'Request body is required'})
-            };
-        }
-        const request = JSON.parse(event.body);
 
         // Validate request
-        if (!request.projectId || !Array.isArray(request.tickets)) {
+        if (!event.projectId || !Array.isArray(event.tickets)) {
             return {
                 statusCode: 400,
                 body: JSON.stringify({message: 'Invalid request format'})
@@ -21,10 +14,12 @@ const handler = async (event) => {
         }
 
         //process analytics
-        const metrics = await processTickets(request);
+        const metrics = await processTickets(event);
+        console.log('Processed metrics:', JSON.stringify(metrics));
 
         // Store in DynamoDB and get the result
         const storedMetrics = await storeMetrics(metrics);
+        console.log("Stored metrics:", JSON.stringify(storedMetrics))
 
         return {
             statusCode: 200,
@@ -107,7 +102,7 @@ function calculateSLACompliance(tickets) {
 }
 
 /**
- * @param {MetricsResponse} metrics
+ * @param {{severityDistribution: {high: number, critical: number, low: number, medium: number}, slaCompliance: Object<string, number>, projectId, averageResolutionTimes: Object<string, number>, timestamp: string}} metrics
  * @returns {Promise<void>}
  */
 async function storeMetrics(metrics) {
@@ -122,8 +117,11 @@ async function storeMetrics(metrics) {
                 severityDistribution = :sd,
                 averageResolutionTimes = :art,
                 slaCompliance = :slac,
-                ttl = if_not_exists(ttl, :ttl)
+                #ttlField = if_not_exists(#ttlField, :ttl)
                 `,
+        ExpressionAttributeNames: {
+            '#ttlField': 'ttl'  // Use ExpressionAttributeName for reserved keyword
+        },
         ExpressionAttributeValues: {
             ':sd': metrics.severityDistribution,
             ':art': metrics.averageResolutionTimes,
@@ -141,6 +139,8 @@ async function storeMetrics(metrics) {
         throw error;
     }
 }
+
+module.exports = {handler};
 
 
 
