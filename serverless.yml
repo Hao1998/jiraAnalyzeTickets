@@ -1,0 +1,54 @@
+service: jira-analytics-services
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
+  environment:
+    METRICS_TABLE: MetricsHistory
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:UpdateItem
+        - dynamodb:PutItem
+      Resource: "arn:aws:dynamodb:us-east-1:637423205741:table/MetricsHistory"
+
+function:
+  analyzeTickets:
+    handler: index.handler
+    events:
+      - http:
+          path: /v1/analyzeTickets
+          method: post
+          cors: true
+          private: true # Required API key
+    timeout: 10 # Increased timeout from default 3 seconds
+
+resources:
+  Resources:
+    MetricsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: MetricsHistory-${opt:stage, 'dev'}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: projectId
+            AttributeType: S
+          - AttributeName: timestamp
+            AttributeType: S
+        KeySchema:
+          - AttributeName: projectId
+            KeyType: HASH
+          - AttributeName: timestamp
+            KeyType: RANGE
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!.git/**'
+    - '!.github/**'
+    - '!*.test.js'
