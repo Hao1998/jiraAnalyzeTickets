@@ -79,10 +79,10 @@ function calculateResolutionTimes(tickets) {
     // Implementation for calculating average resolution times per severity
     // This is a placeholder - implement actual business logic
     return {
-        low: 10,
-        medium: 20,
-        high: 30,
-        critical: 40
+        low: 15,
+        medium: 21,
+        high: 34,
+        critical: 47
     }
 }
 
