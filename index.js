@@ -94,10 +94,10 @@ function calculateSLACompliance(tickets) {
     // Implementation for calculating SLA compliance rates per severity
     // This is a placeholder - implement actual business logic
     return {
-        low: 91,
-        medium: 88,
-        high: 80,
-        critical: 80
+        low: 23,
+        medium: 32,
+        high: 40,
+        critical: 50
     }
 }
 
