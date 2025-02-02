@@ -3,7 +3,6 @@ service: jira-analytics-services
 provider:
   name: aws
   runtime: nodejs18.x
-  stage: ${opt:stage, 'dev'}
   region: us-east-1
   deploymentMethod: direct
   environment:
