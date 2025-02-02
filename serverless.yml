@@ -6,7 +6,7 @@ provider:
   stage: ${opt:stage, 'dev'}
   region: us-east-1
   environment:
-    METRICS_TABLE: MetricsHistory
+    DYNAMODB_TABLE: MetricsHistory
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -14,7 +14,7 @@ provider:
         - dynamodb:PutItem
       Resource: "arn:aws:dynamodb:us-east-1:637423205741:table/MetricsHistory"
 
-function:
+functions:
   analyzeTickets:
     handler: index.handler
     events:
