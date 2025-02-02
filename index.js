@@ -95,7 +95,7 @@ function calculateSLACompliance(tickets) {
     // This is a placeholder - implement actual business logic
     return {
         low: 95,
-        medium: 90,
+        medium: 96,
         high: 85,
         critical: 80
     }
