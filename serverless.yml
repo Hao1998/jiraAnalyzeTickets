@@ -16,14 +16,8 @@ provider:
 
 functions:
   analyzeTickets:
+    name: jira-analyze-ticket
     handler: index.handler
-    events:
-      - http:
-          path: /v1/analyzeTickets
-          method: post
-          cors: true
-          private: true # Required API key
-    timeout: 10 # Increased timeout from default 3 seconds
 
 package:
   patterns:
