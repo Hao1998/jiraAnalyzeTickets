@@ -32,4 +32,4 @@ jobs:
           aws-region: us-east-1
 
       - name: Deploy
-        run: serverless deploy function -f jira-analyze-ticket
+        run: serverless deploy function -f analyzeTickets
