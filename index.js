@@ -106,6 +106,7 @@ function calculateSLACompliance(tickets) {
  * @returns {Promise<void>}
  */
 async function storeMetrics(metrics) {
+    console.log("Testing function11111");
     const dynamoDB = new DynamoDB.DocumentClient();
     const params = {
         TableName: 'MetricsHistory',
