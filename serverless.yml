@@ -1,5 +1,9 @@
 service: jira-analytics-services
 
+custom:
+  functionName: jira-analyze-ticket
+  layerName: jira-sns-dependencies
+
 provider:
   name: aws
   runtime: nodejs18.x
@@ -15,8 +19,21 @@ provider:
 
 functions:
   analyzeTickets:
-    name: jira-analyze-ticket
+    name: ${self:custom.functionName}
     handler: index.handler
+    layers:
+      - !Ref JiraSNSDependenciesLambdaLayer
+
+resources:
+  Resources:
+    JiraSNSDependenciesLambdaLayer:
+      Type: AWS::Lambda::LayerVersion
+      Properties:
+        LayerName: ${self:custom.layerName}
+        Description: Dependencies for Jira SNS integration
+        CompatibleRuntimes:
+          - nodejs18.x
+        # This resource definition won't create a new layer if we're using the reference-only workflow
 
 package:
   patterns:
