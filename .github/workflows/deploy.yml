@@ -130,7 +130,10 @@ jobs:
               --s3-key ${{ env.S3_KEY }} \
               --publish
           
-            echo "Function code updated successfully."
+            echo "Waiting for function update to complete..."
+            # Use the built-in wait command
+            aws lambda wait function-updated \
+              --function-name ${{ env.FUNCTION_NAME }}
           
             # If we have a layer ARN, update the function configuration to use it
             if [ -n "${{ env.LAYER_ARN }}" ]; then
