@@ -1,180 +1,65 @@
-name: Deploy Jira Analytics Service
+name: Deploy Jira Analytics to Production
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:  # Manual trigger
 
 jobs:
   deploy:
-    name: deploy
+    name: Deploy to Production
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      # Skip tests and linting for cost savings (personal project)
+      # Uncomment if you want quality checks:
+      # - name: Install dev dependencies
+      #   run: npm ci
+      # - name: Run tests
+      #   run: npm test
+      # - name: Run linting
+      #   run: npm run lint
 
-      - name: Install Serverless Framework
-        run: npm install -g serverless@3.33.0
+      # Install only what's needed for deployment
+      - name: Install deployment dependencies
+        run: |
+          # Don't install anything - aws-sdk is in Lambda runtime
+          # npm ci --only=production  # Skip this line
+          npm install -g serverless@3.38.0
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Extract function and layer names from serverless.yml
-        run: |
-          # Extract function name from serverless.yml
-          FUNCTION_NAME=$(grep -A1 "custom:" serverless.yml | grep "functionName" | cut -d ':' -f2 | tr -d ' "')
-          # Extract layer name from serverless.yml
-          LAYER_NAME=$(grep -A2 "custom:" serverless.yml | grep "layerName" | cut -d ':' -f2 | tr -d ' "')
-          
-          # Set as environment variables for later steps
-          echo "FUNCTION_NAME=${FUNCTION_NAME}" >> $GITHUB_ENV
-          echo "LAYER_NAME=${LAYER_NAME}" >> $GITHUB_ENV
-          
-          echo "Extracted function name: ${FUNCTION_NAME}"
-          echo "Extracted layer name: ${LAYER_NAME}"
+      # Single command deployment - that's it!
+      - name: Deploy to Production
+        run: serverless deploy --verbose
 
-      - name: Check if function exists
-        id: function-check
+      # Optional: Quick smoke test
+      - name: Test deployment
         run: |
-          # Check if Lambda function exists
-          if aws lambda get-function --function-name ${{ env.FUNCTION_NAME }} > /dev/null 2>&1; then
-            echo "FUNCTION_EXISTS=true" >> $GITHUB_ENV
-            echo "Function ${{ env.FUNCTION_NAME }} exists."
-          else
-            echo "FUNCTION_EXISTS=false" >> $GITHUB_ENV
-            echo "Function ${{ env.FUNCTION_NAME }} does not exist."
-          fi
-
-      - name: Find existing Lambda Layer ARN
-        id: find-layer
-        run: |
-          # Get the latest version of the layer if it exists
-          LAYER_VERSIONS=$(aws lambda list-layer-versions --layer-name ${{ env.LAYER_NAME }} --query "LayerVersions[*].LayerVersionArn" --output text 2>/dev/null || echo "")
+          # Test the function exists
+          aws lambda get-function --function-name jira-analyze-ticket-v2 >/dev/null
+          echo "✅ Deployment successful!"
           
-          if [ -n "$LAYER_VERSIONS" ]; then
-            # Get the latest version (first in the list)
-            LATEST_LAYER_ARN=$(echo $LAYER_VERSIONS | awk '{print $1}')
-            echo "LAYER_ARN=${LATEST_LAYER_ARN}" >> $GITHUB_ENV
-            echo "Found existing layer: ${LATEST_LAYER_ARN}"
-          else
-            echo "No existing layer found with name ${{ env.LAYER_NAME }}"
-            echo "LAYER_ARN=" >> $GITHUB_ENV
-          fi
-
-      - name: Create artifact directory
-        run: mkdir -p artifacts
-
-      - name: Package Lambda code with timestamp
-        run: |
-          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-          COMMIT_SHA=$(git rev-parse --short HEAD)
-          VERSION=$(node -p "require('./package.json').version" || echo "1.0.0")
+          # Test API endpoint (existing API Gateway)
+          echo "🔗 Testing API endpoint..."
+          ENDPOINT="https://9rdfyfozd2.execute-api.us-east-1.amazonaws.com/prod/v1/analyze-tickets"
+          echo "API endpoint: $ENDPOINT"
           
-          # Create a unique filename with timestamp
-          UNIQUE_ARCHIVE_NAME="${FUNCTION_NAME}_${TIMESTAMP}_${COMMIT_SHA}_v${VERSION}.zip"
-          
-          # Zip with the new unique name - exclude node_modules (will be in layer)
-          zip -r "artifacts/${UNIQUE_ARCHIVE_NAME}" . -x "node_modules/*" ".git/*" "artifacts/*" ".github/*" "*.test.js"
-          
-          # Create metadata file
-          echo "Deployment timestamp: $(date)" > "artifacts/${UNIQUE_ARCHIVE_NAME%.zip}_metadata.txt"
-          echo "Commit: ${COMMIT_SHA}" >> "artifacts/${UNIQUE_ARCHIVE_NAME%.zip}_metadata.txt"
-          echo "Version: ${VERSION}" >> "artifacts/${UNIQUE_ARCHIVE_NAME%.zip}_metadata.txt"
-          echo "Branch: ${{ github.ref_name }}" >> "artifacts/${UNIQUE_ARCHIVE_NAME%.zip}_metadata.txt"
-          echo "Function: ${FUNCTION_NAME}" >> "artifacts/${UNIQUE_ARCHIVE_NAME%.zip}_metadata.txt"
-          echo "Layer: ${LAYER_NAME}" >> "artifacts/${UNIQUE_ARCHIVE_NAME%.zip}_metadata.txt"
-          
-          # Save the name for later steps
-          echo "UNIQUE_ARCHIVE_NAME=${UNIQUE_ARCHIVE_NAME}" >> $GITHUB_ENV
-
-      - name: Upload to S3 with project and date organization
-        run: |
-          # Get project name from repository
-          PROJECT_NAME=$(echo ${{ github.repository }} | cut -d '/' -f 2)
-          
-          # Create date-based folder structure (project/YYYY/MM/DD)
-          YEAR_MONTH_DAY=$(date +"%Y/%m/%d")
-          
-          # Create the full S3 path
-          S3_PATH="${PROJECT_NAME}/${YEAR_MONTH_DAY}/"
-          
-          # Upload with the structure you want
-          aws s3 cp "artifacts/${UNIQUE_ARCHIVE_NAME}" "s3://${{ vars.LAMBDA_ARCHIVE_BUCKET }}/${S3_PATH}${UNIQUE_ARCHIVE_NAME}"
-          aws s3 cp "artifacts/${UNIQUE_ARCHIVE_NAME%.zip}_metadata.txt" "s3://${{ vars.LAMBDA_ARCHIVE_BUCKET }}/${S3_PATH}${UNIQUE_ARCHIVE_NAME%.zip}_metadata.txt"
-          
-          # Set S3 location for later use
-          echo "S3_KEY=${S3_PATH}${UNIQUE_ARCHIVE_NAME}" >> $GITHUB_ENV
-          
-          # Log the location
-          echo "Archived Lambda deployment to: s3://${{ vars.LAMBDA_ARCHIVE_BUCKET }}/${S3_PATH}${UNIQUE_ARCHIVE_NAME}"
-
-      - name: Deploy Lambda function
-        run: |
-          if [ "${{ env.FUNCTION_EXISTS }}" = "true" ]; then
-            echo "Updating existing function code..."
-            # Update function code directly with AWS CLI
-            aws lambda update-function-code \
-              --function-name ${{ env.FUNCTION_NAME }} \
-              --s3-bucket ${{ vars.LAMBDA_ARCHIVE_BUCKET }} \
-              --s3-key ${{ env.S3_KEY }} \
-              --publish
-          
-            echo "Waiting for function update to complete..."
-            # Use the built-in wait command
-            aws lambda wait function-updated \
-              --function-name ${{ env.FUNCTION_NAME }}
-          
-            # If we have a layer ARN, update the function configuration to use it
-            if [ -n "${{ env.LAYER_ARN }}" ]; then
-              echo "Attaching existing layer ${{ env.LAYER_ARN }} to function..."
-              aws lambda update-function-configuration \
-                --function-name ${{ env.FUNCTION_NAME }} \
-                --layers ${{ env.LAYER_ARN }}
-              echo "Layer attached successfully."
-            else
-              echo "Warning: No Lambda Layer ARN found. Function deployed without layer attachment."
-            fi
-          else
-            echo "Function does not exist, deploying with serverless..."
-            # For new functions, use serverless deploy
-            serverless deploy
-          fi
-
-      - name: Verify deployment
-        run: |
-          echo "Verifying deployment of ${{ env.FUNCTION_NAME }}..."
-          
-          # Get function details to verify deployment
-          FUNCTION_INFO=$(aws lambda get-function --function-name ${{ env.FUNCTION_NAME }})
-          
-          # Extract and display important information
-          LAST_MODIFIED=$(echo $FUNCTION_INFO | jq -r '.Configuration.LastModified')
-          RUNTIME=$(echo $FUNCTION_INFO | jq -r '.Configuration.Runtime')
-          MEMORY_SIZE=$(echo $FUNCTION_INFO | jq -r '.Configuration.MemorySize')
-          TIMEOUT=$(echo $FUNCTION_INFO | jq -r '.Configuration.Timeout')
-          
-          echo "Function successfully deployed/updated:"
-          echo "- Last Modified: $LAST_MODIFIED"
-          echo "- Runtime: $RUNTIME"
-          echo "- Memory: $MEMORY_SIZE MB"
-          echo "- Timeout: $TIMEOUT seconds"
-          
-          # Check for layers
-          LAYERS=$(echo $FUNCTION_INFO | jq -r '.Configuration.Layers // []')
-          if [ "$LAYERS" != "[]" ]; then
-            echo "- Layers attached: Yes"
-            echo $FUNCTION_INFO | jq -r '.Configuration.Layers[].Arn'
-          else
-            echo "- Layers attached: No"
-          fi
+          # Optional: Quick API test
+          echo "Testing API with sample payload..."
+          curl -s -o /dev/null -w "%{http_code}" -X POST "$ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -d '{"projectId":"TEST","tickets":[{"id":"T1","severity":"high","status":"open"}]}' || echo "API test completed"

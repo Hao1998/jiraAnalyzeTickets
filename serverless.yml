@@ -1,43 +1,126 @@
-service: jira-analytics-services
+service: jira-analytics-services-v2
+
+frameworkVersion: ^3.38.0
 
 custom:
-  functionName: jira-analyze-ticket
-  layerName: jira-sns-dependencies
+  tableName: jira-metrics-history-v2
+  functionName: jira-analyze-ticket-v2
 
 provider:
   name: aws
   runtime: nodejs18.x
+  stage: prod
   region: us-east-1
+
   environment:
-    DYNAMODB_TABLE: MetricsHistory
-  iamRoleStatements:
-    - Effect: Allow
-      Action:
-        - dynamodb:UpdateItem
-        - dynamodb:PutItem
-      Resource: "arn:aws:dynamodb:us-east-1:637423205741:table/MetricsHistory"
+    NODE_ENV: production
+    DYNAMODB_TABLE: ${self:custom.tableName}
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+
+  logRetentionInDays: 7
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:GetItem
+          Resource: !GetAtt MetricsHistoryTableV2.Arn
+
+package:
+  patterns:
+    - '!node_modules/aws-sdk/**'
+    - '!tests/**'
+    - '!*.test.js'
+    - '!coverage/**'
+    - '!README.md'
+    - '!.git/**'
+    - '!.github/**'
+    - '!.serverless/**'
 
 functions:
   analyzeTickets:
     name: ${self:custom.functionName}
     handler: index.handler
-    layers:
-      - !Ref JiraSNSDependenciesLambdaLayer
+    memorySize: 256
+    timeout: 60
+
+    environment:
+      LOG_LEVEL: WARN
+
+    # No events - invoke directly or add your own triggers later
 
 resources:
   Resources:
-    JiraSNSDependenciesLambdaLayer:
-      Type: AWS::Lambda::LayerVersion
+    MetricsHistoryTableV2:
+      Type: AWS::DynamoDB::Table
       Properties:
-        LayerName: ${self:custom.layerName}
-        Description: Dependencies for Jira SNS integration
-        CompatibleRuntimes:
-          - nodejs18.x
-        # This resource definition won't create a new layer if we're using the reference-only workflow
+        TableName: ${self:custom.tableName}
+        BillingMode: PAY_PER_REQUEST
 
-package:
-  patterns:
-    - '!node_modules/**'
-    - '!.git/**'
-    - '!.github/**'
-    - '!*.test.js'
+        AttributeDefinitions:
+          - AttributeName: projectId
+            AttributeType: S
+          - AttributeName: timestamp
+            AttributeType: S
+
+        KeySchema:
+          - AttributeName: projectId
+            KeyType: HASH
+          - AttributeName: timestamp
+            KeyType: RANGE
+
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+
+        Tags:
+          - Key: Project
+            Value: jira-analytics-v2
+          - Key: Environment
+            Value: prod
+
+    AnalyticsErrorAlarmV2:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: jira-analytics-errors-v2
+        AlarmDescription: "Lambda function errors"
+        MetricName: Errors
+        Namespace: AWS/Lambda
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 3
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        Dimensions:
+          - Name: FunctionName
+            Value: ${self:custom.functionName}
+
+    AnalyticsDurationAlarmV2:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: jira-analytics-high-duration-v2
+        AlarmDescription: "Lambda function taking too long"
+        MetricName: Duration
+        Namespace: AWS/Lambda
+        Statistic: Average
+        Period: 300
+        EvaluationPeriods: 2
+        Threshold: 45000  # 45 seconds in milliseconds
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: FunctionName
+            Value: ${self:custom.functionName}
+
+  Outputs:
+    FunctionName:
+      Description: Lambda Function Name
+      Value: !Ref AnalyzeTicketsLambdaFunction
+    TableName:
+      Description: DynamoDB Table Name
+      Value: !Ref MetricsHistoryTableV2
+    ApiEndpoint:
+      Description: API Gateway endpoint URL (existing API)
+      Value: "https://9rdfyfozd2.execute-api.us-east-1.amazonaws.com/prod/v1/analyze-tickets"
